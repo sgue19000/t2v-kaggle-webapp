@@ -1,3 +1,4 @@
+import { friendlyClientError } from "./errors";
 import type {
   GenerateRequest,
   GenerateResponse,
@@ -38,7 +39,7 @@ export function buildGeneratePayload(
     fps: settings.fps,
     guidance_scale: settings.guidanceScale,
     seed: settings.seed,
-    num_inference_steps: settings.numInferenceSteps,
+    steps: settings.numInferenceSteps,
   };
 }
 
@@ -48,11 +49,20 @@ async function parseJson<T>(res: Response): Promise<T> {
     return JSON.parse(text) as T;
   } catch {
     throw new Error(
-      res.ok
-        ? "Backend returned a non-JSON response."
-        : `Backend error ${res.status}: ${text.slice(0, 180)}`,
+      friendlyClientError(
+        res.ok ? "Backend returned a non-JSON response." : `Backend error ${res.status}`,
+      ),
     );
   }
+}
+
+function detailMessage(data: { detail?: unknown; error?: string }, fallback: string): string {
+  if (typeof data.detail === "string") return data.detail;
+  if (Array.isArray(data.detail)) {
+    const first = data.detail[0] as { msg?: string } | undefined;
+    if (first?.msg) return first.msg;
+  }
+  return data.error || fallback;
 }
 
 export async function healthCheck(timeoutMs = 8000): Promise<boolean> {
@@ -91,19 +101,18 @@ export async function startGeneration(
     });
     const data = await parseJson<GenerateResponse & { detail?: unknown; error?: string }>(res);
     if (!res.ok) {
-      const detail =
-        typeof data.detail === "string"
-          ? data.detail
-          : data.error || `Request failed (${res.status})`;
-      throw new Error(detail);
+      throw new Error(friendlyClientError(detailMessage(data, `Request failed (${res.status})`)));
     }
-    if (!data.job_id) throw new Error("Backend did not return a job_id.");
+    if (!data.job_id) throw new Error("Backend did not return a job id.");
     return data;
   } catch (err) {
     if (err instanceof DOMException && err.name === "AbortError") {
-      throw new Error("Timed out talking to the Kaggle API. Is the tunnel still up?");
+      throw new Error(friendlyClientError("timeout"));
     }
-    throw err;
+    if (err instanceof TypeError) {
+      throw new Error(friendlyClientError("failed to fetch"));
+    }
+    throw err instanceof Error ? new Error(friendlyClientError(err.message)) : err;
   } finally {
     clearTimeout(timer);
   }
@@ -118,11 +127,19 @@ export async function getJobStatus(jobId: string): Promise<StatusResponse> {
       signal: controller.signal,
       cache: "no-store",
     });
-    const data = await parseJson<StatusResponse & { detail?: string }>(res);
+    const data = await parseJson<StatusResponse & { detail?: unknown; error?: string }>(res);
     if (!res.ok) {
-      throw new Error(data.detail || data.error || `Status check failed (${res.status})`);
+      throw new Error(friendlyClientError(detailMessage(data, `Status check failed (${res.status})`)));
     }
     return data;
+  } catch (err) {
+    if (err instanceof DOMException && err.name === "AbortError") {
+      throw new Error(friendlyClientError("timeout"));
+    }
+    if (err instanceof TypeError) {
+      throw new Error(friendlyClientError("failed to fetch"));
+    }
+    throw err;
   } finally {
     clearTimeout(timer);
   }
