@@ -25,7 +25,7 @@ export interface GenerateRequest {
   fps: number;
   guidance_scale: number;
   seed: number;
-  num_inference_steps: number;
+  steps: number;
 }
 
 export interface GenerateResponse {
@@ -60,7 +60,8 @@ export const DEFAULT_SETTINGS: VideoSettings = {
   guidanceScale: 9,
   seed: 42,
   negativePrompt: "blurry, low quality, watermark, text, logo",
-  numInferenceSteps: 25,
+  numInferenceSteps: 20,
 };
 
 export const MAX_PROMPT_CHARS = 500;
+export const POLL_TIMEOUT_MS = 15 * 60 * 1000;
