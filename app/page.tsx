@@ -7,11 +7,21 @@ import GenerationHistory from "./components/GenerationHistory";
 import PromptBox from "./components/PromptBox";
 import VideoPlayer from "./components/VideoPlayer";
 import VideoSettingsPanel from "./components/VideoSettings";
-import { getApiBase, getJobStatus, healthCheck, resolveVideoUrl, startGeneration } from "@/lib/api";
+import {
+  getApiBase,
+  getJobStatus,
+  getStoredApiUrl,
+  healthCheck,
+  resolveVideoUrl,
+  setStoredApiUrl,
+  startGeneration,
+} from "@/lib/api";
+import { friendlyClientError } from "@/lib/errors";
 import { clearHistory, loadHistory, upsertHistory } from "@/lib/history";
 import {
   DEFAULT_SETTINGS,
   MAX_PROMPT_CHARS,
+  POLL_TIMEOUT_MS,
   type HistoryItem,
   type JobStatus,
   type VideoSettings,
@@ -30,11 +40,13 @@ export default function HomePage() {
   const [videoUrl, setVideoUrl] = useState("");
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [apiOnline, setApiOnline] = useState<boolean | null>(null);
+  const [apiInput, setApiInput] = useState("");
 
-  const apiBase = useMemo(() => getApiBase(), []);
+  const apiBase = useMemo(() => getApiBase(), [apiInput]);
 
   useEffect(() => {
     setHistory(loadHistory());
+    setApiInput(getStoredApiUrl() || getApiBase());
     let cancelled = false;
     healthCheck().then((ok) => {
       if (!cancelled) setApiOnline(ok);
@@ -43,6 +55,15 @@ export default function HomePage() {
       cancelled = true;
     };
   }, []);
+
+  async function saveApiUrl() {
+    setStoredApiUrl(apiInput);
+    setApiOnline(null);
+    const ok = await healthCheck();
+    setApiOnline(ok);
+    if (!ok) setError(friendlyClientError("failed to fetch"));
+    else setError("");
+  }
 
   async function generate() {
     const trimmed = prompt.trim();
@@ -73,7 +94,11 @@ export default function HomePage() {
       setHistory(upsertHistory(item));
 
       let done = false;
+      const startedAt = Date.now();
       while (!done) {
+        if (Date.now() - startedAt > POLL_TIMEOUT_MS) {
+          throw new Error("Timed out waiting for Kaggle to finish the video.");
+        }
         await new Promise((r) => setTimeout(r, 2500));
         const snap = await getJobStatus(started.job_id);
         setStatus(snap.status);
@@ -86,14 +111,14 @@ export default function HomePage() {
           done = true;
         } else if (snap.status === "failed") {
           const fail = snap.error || "Generation failed on the GPU notebook.";
-          setError(fail);
+          setError(friendlyClientError(fail));
           setHistory(upsertHistory({ ...item, status: "failed", error: fail }));
           done = true;
         }
       }
     } catch (err) {
       const text = err instanceof Error ? err.message : "Unknown error";
-      setError(text);
+      setError(friendlyClientError(text));
       setStatus("failed");
     } finally {
       setBusy(false);
@@ -125,37 +150,30 @@ export default function HomePage() {
                   : "Kaggle API offline"}
             </div>
             <p className="mt-1 max-w-[16rem] break-all text-[11px] text-zinc-500">
-              {apiBase || "Set NEXT_PUBLIC_API_URL"}
+              {apiBase || "Paste the trycloudflare URL"}
             </p>
+            <input
+              value={apiInput}
+              onChange={(e) => setApiInput(e.target.value)}
+              placeholder="https://xxxx.trycloudflare.com"
+              className="mt-2 w-full rounded-xl border border-line bg-ink px-2 py-1.5 text-[11px] text-zinc-200"
+            />
+            <button type="button" onClick={saveApiUrl} className="mt-2 w-full rounded-xl border border-line px-2 py-1 text-[11px] text-mint">
+              Save API URL
+            </button>
           </div>
         </header>
 
         <div className="grid gap-5 lg:grid-cols-[1.15fr_0.85fr]">
           <section className="space-y-5">
             <PromptBox value={prompt} onChange={setPrompt} disabled={busy} />
-            <ExamplePrompts
-              disabled={busy}
-              onPick={(text) => {
-                setPrompt(text);
-                setError("");
-              }}
-            />
-            <GenerateButton
-              disabled={busy || !prompt.trim()}
-              busy={busy}
-              status={status}
-              progress={progress}
-              message={message}
-              onClick={generate}
-            />
+            <ExamplePrompts disabled={busy} onPick={(text) => { setPrompt(text); setError(""); }} />
+            <GenerateButton disabled={busy || !prompt.trim()} busy={busy} status={status} progress={progress} message={message} onClick={generate} />
             {error ? (
-              <div className="rounded-2xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
-                {error}
-              </div>
+              <div className="rounded-2xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">{error}</div>
             ) : null}
             <VideoPlayer src={videoUrl} />
           </section>
-
           <aside className="space-y-5">
             <VideoSettingsPanel value={settings} onChange={setSettings} disabled={busy} />
             <GenerationHistory
