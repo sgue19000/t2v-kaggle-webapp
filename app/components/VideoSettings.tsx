@@ -19,7 +19,7 @@ export default function VideoSettingsPanel({
   return (
     <div className="rounded-3xl border border-line bg-panel p-4">
       <div className="mb-4 flex items-center justify-between">
-        <h2 className="text-sm font-medium text-zinc-200">Settings for P100</h2>
+        <h2 className="text-sm font-medium text-zinc-200">Settings for free Colab GPU</h2>
         <button type="button" disabled={disabled} onClick={() => onChange(DEFAULT_SETTINGS)} className="text-xs text-mint disabled:opacity-50">
           Reset
         </button>
@@ -48,8 +48,8 @@ export default function VideoSettingsPanel({
         </Field>
         <Field label="Steps">
           <select disabled={disabled} value={value.numInferenceSteps} onChange={(e) => patch({ numInferenceSteps: Number(e.target.value) })} className="w-full rounded-[0.9rem] border border-line bg-ink px-3 py-2 text-zinc-100 outline-none">
-            <option value={15}>15 faster</option>
-            <option value={20}>20 default</option>
+            <option value={10}>10 faster</option>
+            <option value={15}>15 default</option>
             <option value={25}>25 sharper</option>
           </select>
         </Field>
@@ -63,7 +63,7 @@ export default function VideoSettingsPanel({
       <label className="mt-3 block text-xs text-zinc-400">Negative prompt</label>
       <textarea disabled={disabled} rows={3} value={value.negativePrompt} onChange={(e) => patch({ negativePrompt: e.target.value })} className="mt-1 min-h-[4.5rem] w-full resize-y rounded-[0.9rem] border border-line bg-ink px-3 py-2 text-zinc-100 outline-none" />
       <p className="mt-3 text-[11px] leading-relaxed text-zinc-500">
-        Stay on 16 frames / 256px / 20 steps on a free Kaggle P100. Higher settings are rejected to avoid OOM.
+        Default is 8 frames / 256px / 15 steps. 16 frames is the maximum on a free Colab GPU.
       </p>
     </div>
   );
