@@ -1,18 +1,14 @@
 # Kaggle GPU backend
 
-This folder is the inference side of Lumen Clip. It is **not** a permanent server.
-
-Free Kaggle GPU notebooks last about 12 hours, disconnect if idle, and use a Tesla P100 or T4 (~16 GB VRAM).
+Temporary single-user API. Not a production server.
 
 ## Model
 
-`ali-vilab/text-to-video-ms-1.7b` (fallback `damo-vilab/text-to-video-ms-1.7b`)
+Diffusers `TextToVideoSDPipeline`
+- `ali-vilab/text-to-video-ms-1.7b`
+- fallback `damo-vilab/text-to-video-ms-1.7b` (ID used in official HF snippets)
 
-1.7B `TextToVideoSDPipeline` with FP16, VAE slicing, and CPU offload. Newer models (Wan 14B, HunyuanVideo, CogVideoX-5B) do not fit a free Kaggle session reliably.
-
-License: CC-BY-NC-4.0. English prompts only.
-
-Recommended P100 settings: 16 frames, 256x256, 8 fps, 25 steps, guidance 9.
+FP16 + VAE slicing/tiling + CPU offload. Defaults: 16 frames, 256x256, 8 fps, 20 steps, guidance 9.
 
 ## API
 
@@ -20,3 +16,5 @@ Recommended P100 settings: 16 frames, 256x256, 8 fps, 25 steps, guidance 9.
 - POST /generate
 - GET /status/{job_id}
 - GET /video/{job_id}
+
+One GPU job at a time. CORS allows https://sgue19000.github.io and localhost.
