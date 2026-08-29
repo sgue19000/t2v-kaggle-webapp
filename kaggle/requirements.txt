@@ -1,0 +1,12 @@
+torch>=2.1.0
+diffusers>=0.29.0
+transformers>=4.41.0
+accelerate>=0.31.0
+safetensors>=0.4.3
+fastapi>=0.111.0
+uvicorn>=0.30.0
+imageio>=2.34.0
+imageio-ffmpeg>=0.5.1
+opencv-python-headless>=4.10.0
+numpy>=1.26.0
+pydantic>=2.7.0

@@ -5,9 +5,24 @@ import type {
   VideoSettings,
 } from "./types";
 
+const API_STORE = "t2v.apiUrl";
+
+export function getStoredApiUrl(): string {
+  if (typeof window === "undefined") return "";
+  return (localStorage.getItem(API_STORE) || "").replace(/\/$/, "");
+}
+
+export function setStoredApiUrl(url: string): void {
+  if (typeof window === "undefined") return;
+  const clean = url.trim().replace(/\/$/, "");
+  if (clean) localStorage.setItem(API_STORE, clean);
+  else localStorage.removeItem(API_STORE);
+}
+
 export function getApiBase(): string {
-  const raw = process.env.NEXT_PUBLIC_API_URL ?? "";
-  return raw.replace(/\/$/, "");
+  const stored = getStoredApiUrl();
+  if (stored) return stored;
+  return (process.env.NEXT_PUBLIC_API_URL ?? "").replace(/\/$/, "");
 }
 
 export function buildGeneratePayload(
@@ -63,9 +78,7 @@ export async function startGeneration(
 ): Promise<GenerateResponse> {
   const base = getApiBase();
   if (!base) {
-    throw new Error(
-      "NEXT_PUBLIC_API_URL is empty. Set it to your Kaggle Cloudflare Tunnel URL.",
-    );
+    throw new Error("Set the Kaggle HTTPS tunnel URL in the API field first.");
   }
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 20000);
