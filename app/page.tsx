@@ -80,7 +80,7 @@ export default function HomePage() {
     setVideoUrl("");
     setStatus("queued");
     setProgress(5);
-    setMessage("Sending job to Kaggle…");
+    setMessage("Sending job to Colab…");
 
     try {
       const started = await startGeneration(trimmed, settings);
@@ -97,7 +97,7 @@ export default function HomePage() {
       const startedAt = Date.now();
       while (!done) {
         if (Date.now() - startedAt > POLL_TIMEOUT_MS) {
-          throw new Error("Timed out waiting for Kaggle to finish the video.");
+          throw new Error("Timed out waiting for Colab to finish the video.");
         }
         await new Promise((r) => setTimeout(r, 2500));
         const snap = await getJobStatus(started.job_id);
@@ -110,7 +110,7 @@ export default function HomePage() {
           setHistory(upsertHistory({ ...item, status: "completed", videoUrl: url }));
           done = true;
         } else if (snap.status === "failed") {
-          const fail = snap.error || "Generation failed on the GPU notebook.";
+          const fail = snap.error || "Generation failed on the Colab GPU.";
           setError(friendlyClientError(fail));
           setHistory(upsertHistory({ ...item, status: "failed", error: fail }));
           done = true;
@@ -130,10 +130,10 @@ export default function HomePage() {
       <div className="mx-auto max-w-5xl px-4 pb-16 pt-8 sm:px-6">
         <header className="mb-8 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
           <div>
-            <p className="text-xs uppercase tracking-[0.24em] text-mint">Open source · Kaggle GPU</p>
+            <p className="text-xs uppercase tracking-[0.24em] text-mint">Open source · Colab GPU</p>
             <h1 className="mt-2 text-3xl font-semibold tracking-tight sm:text-4xl">Lumen Clip</h1>
             <p className="mt-2 max-w-xl text-sm text-zinc-400">
-              Type a scene. A free Kaggle notebook runs ModelScope Text-to-Video 1.7B and returns an MP4.
+              Type a scene. A free Google Colab notebook runs ModelScope Text-to-Video 1.7B and returns an MP4.
             </p>
           </div>
           <div className="rounded-2xl border border-line bg-panel px-4 py-3 text-xs text-zinc-400">
@@ -146,8 +146,8 @@ export default function HomePage() {
               {apiOnline === null
                 ? "Checking API"
                 : apiOnline
-                  ? "Kaggle API reachable"
-                  : "Kaggle API offline"}
+                  ? "Colab API reachable"
+                  : "Colab API offline"}
             </div>
             <p className="mt-1 max-w-[16rem] break-all text-[11px] text-zinc-500">
               {apiBase || "Paste the trycloudflare URL"}
