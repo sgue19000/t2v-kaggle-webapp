@@ -1,0 +1,28 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+html,
+body {
+  min-height: 100%;
+  background: #07070c;
+}
+
+body {
+  font-feature-settings: "ss01" on, "cv11" on;
+}
+
+textarea,
+input,
+select {
+  font-size: 16px;
+}
+
+.noise {
+  background-image: radial-gradient(rgba(255, 255, 255, 0.04) 0.6px, transparent 0.6px);
+  background-size: 14px 14px;
+}

@@ -1,0 +1,125 @@
+import type {
+  GenerateRequest,
+  GenerateResponse,
+  StatusResponse,
+  VideoSettings,
+} from "./types";
+
+export function getApiBase(): string {
+  const raw = process.env.NEXT_PUBLIC_API_URL ?? "";
+  return raw.replace(/\/$/, "");
+}
+
+export function buildGeneratePayload(
+  prompt: string,
+  settings: VideoSettings,
+): GenerateRequest {
+  return {
+    prompt: prompt.trim(),
+    negative_prompt: settings.negativePrompt.trim() || undefined,
+    num_frames: settings.numFrames,
+    height: settings.height,
+    width: settings.width,
+    fps: settings.fps,
+    guidance_scale: settings.guidanceScale,
+    seed: settings.seed,
+    num_inference_steps: settings.numInferenceSteps,
+  };
+}
+
+async function parseJson<T>(res: Response): Promise<T> {
+  const text = await res.text();
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    throw new Error(
+      res.ok
+        ? "Backend returned a non-JSON response."
+        : `Backend error ${res.status}: ${text.slice(0, 180)}`,
+    );
+  }
+}
+
+export async function healthCheck(timeoutMs = 8000): Promise<boolean> {
+  const base = getApiBase();
+  if (!base) return false;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(`${base}/health`, { signal: controller.signal });
+    if (!res.ok) return false;
+    const data = await parseJson<{ ok?: boolean; status?: string }>(res);
+    return Boolean(data.ok || data.status === "ok");
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+export async function startGeneration(
+  prompt: string,
+  settings: VideoSettings,
+): Promise<GenerateResponse> {
+  const base = getApiBase();
+  if (!base) {
+    throw new Error(
+      "NEXT_PUBLIC_API_URL is empty. Set it to your Kaggle Cloudflare Tunnel URL.",
+    );
+  }
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 20000);
+  try {
+    const res = await fetch(`${base}/generate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(buildGeneratePayload(prompt, settings)),
+      signal: controller.signal,
+    });
+    const data = await parseJson<GenerateResponse & { detail?: unknown; error?: string }>(res);
+    if (!res.ok) {
+      const detail =
+        typeof data.detail === "string"
+          ? data.detail
+          : data.error || `Request failed (${res.status})`;
+      throw new Error(detail);
+    }
+    if (!data.job_id) throw new Error("Backend did not return a job_id.");
+    return data;
+  } catch (err) {
+    if (err instanceof DOMException && err.name === "AbortError") {
+      throw new Error("Timed out talking to the Kaggle API. Is the tunnel still up?");
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+export async function getJobStatus(jobId: string): Promise<StatusResponse> {
+  const base = getApiBase();
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 15000);
+  try {
+    const res = await fetch(`${base}/status/${encodeURIComponent(jobId)}`, {
+      signal: controller.signal,
+      cache: "no-store",
+    });
+    const data = await parseJson<StatusResponse & { detail?: string }>(res);
+    if (!res.ok) {
+      throw new Error(data.detail || data.error || `Status check failed (${res.status})`);
+    }
+    return data;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+export function resolveVideoUrl(pathOrUrl: string): string {
+  if (pathOrUrl.startsWith("http://") || pathOrUrl.startsWith("https://")) {
+    return pathOrUrl;
+  }
+  const base = getApiBase();
+  if (!base) return pathOrUrl;
+  return `${base}${pathOrUrl.startsWith("/") ? "" : "/"}${pathOrUrl}`;
+}
