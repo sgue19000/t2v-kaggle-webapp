@@ -38,7 +38,7 @@ ALLOWED_ORIGINS = [
     "http://127.0.0.1:3001",
 ]
 
-app = FastAPI(title="Lumen Clip Colab API", version="3.0.0")
+app = FastAPI(title="Lumen Clip Colab API", version="3.1.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
@@ -110,6 +110,7 @@ def health():
     return {
         "ok": True,
         "status": "ok",
+        "server_status": "running",
         "gpu": report.get("gpu"),
         "cuda_available": report.get("cuda_available"),
         "vram_gb": report.get("vram_gb"),
