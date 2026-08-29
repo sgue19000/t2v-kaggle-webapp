@@ -9,6 +9,25 @@ export default function VideoPlayer({ src }: { src: string }) {
     );
   }
 
+  async function download(e: React.MouseEvent<HTMLAnchorElement>) {
+    e.preventDefault();
+    try {
+      const res = await fetch(src, { cache: "no-store" });
+      if (!res.ok) throw new Error("download failed");
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "lumen-clip.mp4";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch {
+      window.open(src, "_blank");
+    }
+  }
+
   return (
     <div className="overflow-hidden rounded-3xl border border-line bg-black">
       <video src={src} controls playsInline className="aspect-square w-full bg-black object-contain" />
@@ -16,6 +35,7 @@ export default function VideoPlayer({ src }: { src: string }) {
         <a
           href={src}
           download="lumen-clip.mp4"
+          onClick={download}
           className="rounded-xl bg-zinc-100 px-4 py-2 text-sm font-medium text-zinc-900"
         >
           Download MP4
