@@ -1,47 +1,29 @@
 # Lumen Clip
 
-Mobile-first text-to-video web app.
+GitHub Pages frontend → Google Colab free GPU → FastAPI → Cloudflare tunnel.
 
-- Frontend: Next.js on GitHub Pages
-- Backend: temporary FastAPI process in a free Kaggle GPU notebook
-- Model: [ali-vilab/text-to-video-ms-1.7b](https://huggingface.co/ali-vilab/text-to-video-ms-1.7b) via Diffusers `TextToVideoSDPipeline` (fallback `damo-vilab/text-to-video-ms-1.7b`)
+- Model: [ali-vilab/text-to-video-ms-1.7b](https://huggingface.co/ali-vilab/text-to-video-ms-1.7b) (`TextToVideoSDPipeline`)
+- Site: https://sgue19000.github.io/t2v-kaggle-webapp/
+- Colab notebook: https://colab.research.google.com/github/sgue19000/t2v-kaggle-webapp/blob/main/colab/video_generator_colab.ipynb
 
-Repo: https://github.com/sgue19000/t2v-kaggle-webapp
+This is not a permanent server. The Colab runtime can disconnect. The tunnel URL changes every session. Generated files die with the runtime. GPU type varies (often T4, not guaranteed).
 
-## Step 2 procedure
+## Start backend (Android)
 
-1. Open https://www.kaggle.com and sign in.
-2. Create a new notebook.
-3. Settings → Accelerator → GPU P100 or T4 → Save → Restart session.
-4. Upload and run `kaggle/video_generator.ipynb` top to bottom.
-5. Wait for the model-load cell to finish.
-6. Copy the printed trycloudflare URL:
+1. Open Google Colab.
+2. Open `colab/video_generator_colab.ipynb` from the link above.
+3. Runtime → Change runtime type → GPU.
+4. Runtime → Run all.
+5. Wait for the model to load.
+6. Wait for the tiny test video.
+7. Copy the printed PUBLIC API URL (`https://….trycloudflare.com`).
+8. Open the GitHub Pages website.
+9. Paste the URL into API URL.
+10. Save.
+11. Generate a video.
 
-```
-========================================
-PUBLIC API URL:
-https://xxxx.trycloudflare.com
-========================================
-```
+Keep the Colab tab open the whole time.
 
-7. Open https://sgue19000.github.io/t2v-kaggle-webapp/
-8. Paste the URL into the API URL field and tap Save API URL.
-9. Click Generate Video.
-10. Wait until status is completed.
-11. Play or download the MP4.
+## Defaults
 
-Keep the Kaggle notebook running the entire time. If it disconnects, start again and paste the new URL. No rebuild is required.
-
-## Local frontend
-
-```bash
-git clone https://github.com/sgue19000/t2v-kaggle-webapp.git
-cd t2v-kaggle-webapp
-npm install
-npm run lint
-npm run typecheck
-npm run build
-python3 -m py_compile kaggle/generator.py kaggle/server.py
-```
-
-P100 defaults: 16 frames, 256x256, 8 fps, 20 steps, guidance 9.
+8 frames, 256x256, 8 fps, 15 steps, guidance 9. Server rejects larger resolutions.

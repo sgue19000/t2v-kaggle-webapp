@@ -53,14 +53,14 @@ export interface HistoryItem {
 }
 
 export const DEFAULT_SETTINGS: VideoSettings = {
-  numFrames: 16,
+  numFrames: 8,
   height: 256,
   width: 256,
   fps: 8,
   guidanceScale: 9,
   seed: 42,
   negativePrompt: "blurry, low quality, watermark, text, logo",
-  numInferenceSteps: 20,
+  numInferenceSteps: 15,
 };
 
 export const MAX_PROMPT_CHARS = 500;

@@ -1,20 +1,7 @@
-# Kaggle GPU backend
+# Archived Kaggle backend
 
-Temporary single-user API. Not a production server.
+Primary GPU backend is now Google Colab:
 
-## Model
+https://colab.research.google.com/github/sgue19000/t2v-kaggle-webapp/blob/main/colab/video_generator_colab.ipynb
 
-Diffusers `TextToVideoSDPipeline`
-- `ali-vilab/text-to-video-ms-1.7b`
-- fallback `damo-vilab/text-to-video-ms-1.7b` (ID used in official HF snippets)
-
-FP16 + VAE slicing/tiling + CPU offload. Defaults: 16 frames, 256x256, 8 fps, 20 steps, guidance 9.
-
-## API
-
-- GET /health
-- POST /generate
-- GET /status/{job_id}
-- GET /video/{job_id}
-
-One GPU job at a time. CORS allows https://sgue19000.github.io and localhost.
+These files remain for history. Use `colab/generator.py` and `colab/server.py`.
