@@ -71,7 +71,7 @@ export async function healthCheck(timeoutMs = 8000): Promise<boolean> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const res = await fetch(`${base}/health`, { signal: controller.signal });
+    const res = await fetch(`${base}/health`, { signal: controller.signal, cache: "no-store" });
     if (!res.ok) return false;
     const data = await parseJson<{ ok?: boolean; status?: string }>(res);
     return Boolean(data.ok || data.status === "ok");
@@ -88,7 +88,7 @@ export async function startGeneration(
 ): Promise<GenerateResponse> {
   const base = getApiBase();
   if (!base) {
-    throw new Error("Set the Kaggle HTTPS tunnel URL in the API field first.");
+    throw new Error("Set the Colab HTTPS tunnel URL in the API field first.");
   }
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 20000);
