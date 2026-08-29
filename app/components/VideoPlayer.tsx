@@ -1,5 +1,7 @@
 "use client";
 
+import type { MouseEvent } from "react";
+
 export default function VideoPlayer({ src }: { src: string }) {
   if (!src) {
     return (
@@ -9,7 +11,7 @@ export default function VideoPlayer({ src }: { src: string }) {
     );
   }
 
-  async function download(e: React.MouseEvent<HTMLAnchorElement>) {
+  async function download(e: MouseEvent<HTMLAnchorElement>) {
     e.preventDefault();
     try {
       const res = await fetch(src, { cache: "no-store" });
