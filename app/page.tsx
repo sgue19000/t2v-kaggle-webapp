@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import ExamplePrompts from "./components/ExamplePrompts";
 import GenerateButton from "./components/GenerateButton";
 import GenerationHistory from "./components/GenerationHistory";
@@ -42,7 +42,7 @@ export default function HomePage() {
   const [apiOnline, setApiOnline] = useState<boolean | null>(null);
   const [apiInput, setApiInput] = useState("");
 
-  const apiBase = useMemo(() => getApiBase(), [apiInput]);
+  const apiBase = (getStoredApiUrl() || apiInput).replace(/\/$/, "");
 
   useEffect(() => {
     setHistory(loadHistory());
