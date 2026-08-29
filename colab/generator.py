@@ -71,37 +71,103 @@ def gpu_report() -> dict[str, Any]:
     return info
 
 
+def _as_numpy(frames: Any):
+    import numpy as np
+    if frames is None:
+        return None
+    if hasattr(frames, "detach"):
+        frames = frames.detach().cpu().numpy()
+    if isinstance(frames, np.ndarray):
+        return frames
+    return None
+
+
+def _to_uint8_hwc(frame: Any):
+    import numpy as np
+    if hasattr(frame, "convert"):
+        return np.asarray(frame.convert("RGB"), dtype=np.uint8)
+    arr = np.asarray(frame)
+    if arr.ndim == 3 and arr.shape[0] in (1, 3, 4) and arr.shape[-1] not in (1, 3, 4):
+        arr = np.transpose(arr, (1, 2, 0))
+    if arr.ndim == 2:
+        arr = np.stack([arr, arr, arr], axis=-1)
+    if arr.shape[-1] == 4:
+        arr = arr[..., :3]
+    if arr.dtype != np.uint8:
+        amax = float(np.nanmax(arr)) if arr.size else 0.0
+        if amax <= 1.5:
+            arr = arr * 255.0
+        arr = np.clip(arr, 0, 255).astype(np.uint8)
+    return np.ascontiguousarray(arr)
+
+
+def _to_pil(frame: Any):
+    from PIL import Image
+    if hasattr(frame, "convert"):
+        return frame.convert("RGB")
+    return Image.fromarray(_to_uint8_hwc(frame), mode="RGB")
+
+
+def _frame_count(obj: Any) -> int:
+    import numpy as np
+    if obj is None:
+        return 0
+    if isinstance(obj, np.ndarray):
+        return int(obj.shape[0]) if obj.ndim >= 1 else 0
+    if hasattr(obj, "__len__"):
+        try:
+            return len(obj)
+        except TypeError:
+            return 0
+    return 0
+
+
 def _normalize_frames(frames: Any) -> list:
+    import numpy as np
     if frames is None:
         raise GenerationError("The model returned no frames.")
     if hasattr(frames, "frames"):
         frames = frames.frames
-    if isinstance(frames, list) and frames and isinstance(frames[0], list):
-        frames = frames[0]
-    if not frames:
-        raise GenerationError("The model returned an empty frame list.")
-    return list(frames)
+    arr = _as_numpy(frames)
+    if arr is not None:
+        if arr.ndim == 5:
+            arr = arr[0]
+        if arr.ndim != 4:
+            raise GenerationError("Unexpected video tensor shape from the model.")
+        if arr.shape[1] in (1, 3, 4) and arr.shape[-1] not in (1, 3, 4):
+            arr = np.transpose(arr, (0, 2, 3, 1))
+        pil_frames = [_to_pil(arr[i]) for i in range(arr.shape[0])]
+        if _frame_count(pil_frames) == 0:
+            raise GenerationError("The model returned an empty frame list.")
+        return pil_frames
+    if isinstance(frames, (list, tuple)):
+        if _frame_count(frames) == 0:
+            raise GenerationError("The model returned an empty frame list.")
+        first = frames[0]
+        first_arr = _as_numpy(first)
+        if isinstance(first, (list, tuple)) or (first_arr is not None and getattr(first_arr, "ndim", 0) == 4):
+            frames = first
+        if _frame_count(frames) == 0:
+            raise GenerationError("The model returned an empty frame list.")
+        return [_to_pil(frame) for frame in frames]
+    raise GenerationError("Could not read frames from the model output.")
 
 
 def _export_mp4(frames: Any, path: Path, fps: int) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     if path.exists():
         path.unlink()
-    frames = _normalize_frames(frames)
+    pil_frames = _normalize_frames(frames)
     try:
         from diffusers.utils import export_to_video
-        export_to_video(frames, str(path), fps=int(fps))
+        export_to_video(pil_frames, str(path), fps=int(fps))
     except Exception:
-        import numpy as np
         try:
             import imageio.v2 as imageio
-            arr = []
-            for frame in frames:
-                arr.append(np.array(frame.convert("RGB")) if hasattr(frame, "convert") else np.asarray(frame))
-            imageio.mimsave(str(path), arr, fps=int(fps), codec="libx264", quality=8)
+            imageio.mimsave(str(path), [_to_uint8_hwc(f) for f in pil_frames], fps=int(fps), codec="libx264")
         except Exception as exc:
             raise GenerationError("Could not write an MP4 from the generated frames.") from exc
-    if not path.exists() or path.stat().st_size < 1024:
+    if not path.exists() or path.stat().st_size < 256:
         raise GenerationError("MP4 export produced an empty or missing file.")
     return path
 
