@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Temporary REST API for the Kaggle GPU notebook. Not a permanent host."""
+"""Temporary FastAPI backend for a free Kaggle GPU notebook."""
 
 from __future__ import annotations
 
@@ -15,23 +15,41 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
-from generator import OUTPUT_DIR, generate_video, load_pipeline, model_info, validate_request
+from generator import (
+    OUTPUT_DIR,
+    friendly_error,
+    generate_video,
+    gpu_report,
+    load_pipeline,
+    model_info,
+    validate_request,
+    GenerationError,
+)
 
 HOST = os.environ.get("T2V_HOST", "0.0.0.0")
 PORT = int(os.environ.get("T2V_PORT", "8000"))
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
-app = FastAPI(title="Lumen Clip Kaggle API", version="1.0.0")
+ALLOWED_ORIGINS = [
+    "https://sgue19000.github.io",
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    "http://localhost:3001",
+    "http://127.0.0.1:3001",
+]
+
+app = FastAPI(title="Lumen Clip Kaggle API", version="2.0.0")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
+    allow_origins=ALLOWED_ORIGINS,
+    allow_origin_regex=r"https://.*\.github\.io|http://(localhost|127\.0\.0\.1)(:\d+)?",
+    allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["*"],
 )
 
 _jobs: dict[str, dict[str, Any]] = {}
 _lock = threading.Lock()
-_worker_busy = threading.Event()
+_busy = threading.Event()
 
 
 class GenerateBody(BaseModel):
@@ -41,58 +59,113 @@ class GenerateBody(BaseModel):
     height: int = 256
     width: int = 256
     fps: int = 8
+    steps: Optional[int] = 20
+    num_inference_steps: Optional[int] = None
     guidance_scale: float = 9.0
     seed: int = 42
-    num_inference_steps: int = 25
+
+
+def _public_job(job: dict[str, Any]) -> dict[str, Any]:
+    out = {
+        "job_id": job.get("job_id"),
+        "prompt": job.get("prompt"),
+        "status": job.get("status"),
+        "progress": job.get("progress", 0),
+        "message": job.get("message"),
+        "created_at": job.get("created_at"),
+        "completed_at": job.get("completed_at"),
+        "error": job.get("error"),
+    }
+    if job.get("status") == "completed":
+        out["video_url"] = f"/video/{job['job_id']}"
+    return out
 
 
 def _set_job(job_id: str, **fields: Any) -> None:
     with _lock:
         job = _jobs.setdefault(job_id, {"job_id": job_id})
         job.update(fields)
-        job["updated_at"] = time.time()
 
 
-def _run_job(job_id: str, payload: dict) -> None:
+def _run_job(job_id: str, payload: dict[str, Any]) -> None:
     try:
-        _set_job(job_id, status="loading", progress=10, message="Warming model")
+        _set_job(job_id, status="loading", progress=10, message="Loading model")
 
         def cb(status: str, progress: int, message: str) -> None:
             _set_job(job_id, status=status, progress=progress, message=message)
 
         out = OUTPUT_DIR / f"{job_id}.mp4"
         generate_video(payload, out_path=out, progress_cb=cb)
-        _set_job(job_id, status="completed", progress=100, message="Done", video_url=f"/video/{job_id}")
+        _set_job(
+            job_id,
+            status="completed",
+            progress=100,
+            message="Done",
+            output_path=str(out),
+            completed_at=time.time(),
+            error=None,
+        )
     except Exception as exc:
-        _set_job(job_id, status="failed", progress=0, error=str(exc), message="failed")
+        _set_job(
+            job_id,
+            status="failed",
+            progress=0,
+            message="failed",
+            error=friendly_error(exc),
+            completed_at=time.time(),
+        )
     finally:
-        _worker_busy.clear()
+        _busy.clear()
 
 
 @app.get("/health")
 def health():
     info = model_info()
-    return {"ok": True, "status": "ok", "temporary_session": True, **info}
+    report = gpu_report()
+    return {
+        "ok": True,
+        "status": "ok",
+        "gpu": report.get("gpu"),
+        "cuda_available": report.get("cuda_available"),
+        "vram_gb": report.get("vram_gb"),
+        "model_id": info.get("model_id"),
+        "loaded": info.get("loaded"),
+        "temporary_session": True,
+        "busy": _busy.is_set(),
+    }
 
 
 @app.post("/generate")
 def generate(body: GenerateBody):
     payload = body.model_dump()
+    if payload.get("num_inference_steps") and not payload.get("steps"):
+        payload["steps"] = payload["num_inference_steps"]
     try:
-        validate_request(payload)
-    except ValueError as exc:
+        params = validate_request(payload)
+    except GenerationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    if _worker_busy.is_set():
+    if _busy.is_set():
         raise HTTPException(
             status_code=409,
-            detail="A generation job is already running on this Kaggle GPU. Wait for it to finish.",
+            detail="The Kaggle GPU is already generating a video. Wait for that job to finish.",
         )
 
     job_id = uuid.uuid4().hex[:12]
-    _set_job(job_id, status="queued", progress=1, message="Queued")
-    _worker_busy.set()
-    threading.Thread(target=_run_job, args=(job_id, payload), daemon=True).start()
+    now = time.time()
+    _set_job(
+        job_id,
+        prompt=params["prompt"],
+        status="queued",
+        progress=1,
+        message="Queued",
+        created_at=now,
+        completed_at=None,
+        output_path=None,
+        error=None,
+    )
+    _busy.set()
+    threading.Thread(target=_run_job, args=(job_id, params), daemon=True).start()
     return {"job_id": job_id, "status": "queued"}
 
 
@@ -101,20 +174,28 @@ def status(job_id: str):
     with _lock:
         job = _jobs.get(job_id)
     if not job:
-        raise HTTPException(status_code=404, detail="Unknown job_id")
-    return job
+        raise HTTPException(status_code=404, detail="Unknown job. Start a new generation.")
+    return _public_job(job)
 
 
 @app.get("/video/{job_id}")
 def video(job_id: str):
     path = OUTPUT_DIR / f"{job_id}.mp4"
-    if not path.exists():
-        raise HTTPException(status_code=404, detail="Video not ready")
-    return FileResponse(path, media_type="video/mp4", filename=f"{job_id}.mp4")
+    if not path.exists() or path.stat().st_size < 1024:
+        raise HTTPException(status_code=404, detail="Video is not ready yet.")
+    return FileResponse(
+        path,
+        media_type="video/mp4",
+        filename=f"{job_id}.mp4",
+        headers={"Content-Disposition": f'inline; filename="{job_id}.mp4"'},
+    )
 
 
 def preload() -> None:
-    print("Preloading model so the first web request is faster...")
+    if os.environ.get("T2V_SKIP_PRELOAD") == "1":
+        print("Skipping model preload")
+        return
+    print("Preloading model")
     load_pipeline()
     print(model_info())
 
