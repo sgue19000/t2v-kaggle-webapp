@@ -1,5 +1,4 @@
 """Start FastAPI in the current Colab kernel so it shares the loaded model."""
-import importlib
 import json
 import os
 import socket
@@ -59,39 +58,38 @@ def stop_old():
 
 healthy = local_health()
 if healthy and healthy.get("ok") and not FORCE_RESTART:
+    print("FastAPI already running in this process. Not starting another server.")
     print("FastAPI is healthy on http://127.0.0.1:8000")
     print(healthy)
 else:
-    if FORCE_RESTART or port_open(8000):
+    if FORCE_RESTART:
         stop_old()
-    healthy = local_health()
-    if healthy and healthy.get("ok") and not FORCE_RESTART:
+    healthy = None if FORCE_RESTART else local_health()
+    if healthy and healthy.get("ok"):
+        print("FastAPI already running in this process. Not starting another server.")
         print("FastAPI is healthy on http://127.0.0.1:8000")
         print(healthy)
     else:
-        for name in ("server", "generator"):
-            sys.modules.pop(name, None)
-        import generator as generator_mod
-        import server as server_mod
-        importlib.reload(generator_mod)
-        importlib.reload(server_mod)
+        import generator  # same module Cell 4 loaded; do not reload
+        import server
         from server import app
         import uvicorn
 
+        print("generator loaded flag:", generator.model_info().get("loaded"))
         boot_error = []
         config = uvicorn.Config(app, host="0.0.0.0", port=8000, log_level="info", lifespan="off")
-        server = uvicorn.Server(config)
-        server.install_signal_handlers = False
+        uv_server = uvicorn.Server(config)
+        uv_server.install_signal_handlers = False
 
         def run_api():
             try:
-                server.run()
+                uv_server.run()
             except Exception:
                 boot_error.append(traceback.format_exc())
                 traceback.print_exc()
 
         threading.Thread(target=run_api, daemon=True, name="t2v-fastapi").start()
-        globals()["T2V_UVICORN"] = server
+        globals()["T2V_UVICORN"] = uv_server
 
         healthy = None
         for _ in range(40):
