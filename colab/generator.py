@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import gc
 import os
+import sys
 import threading
 from pathlib import Path
 from typing import Any, Callable, Optional
@@ -31,6 +32,37 @@ _pipe = None
 _model_id: Optional[str] = None
 _device_note = ""
 _load_lock = threading.Lock()
+_DIFFUSERS_READY = False
+
+
+def _patch_py313_metadata() -> None:
+    """Python 3.13 packages_distributions() can hang for minutes on Colab."""
+    dummy = lambda: {}  # noqa: E731
+    try:
+        import importlib.metadata as md
+        md.packages_distributions = dummy  # type: ignore[method-assign]
+    except Exception:
+        pass
+    try:
+        import importlib_metadata as md2
+        md2.packages_distributions = dummy  # type: ignore[method-assign]
+    except Exception:
+        pass
+
+
+def _import_diffusers():
+    global _DIFFUSERS_READY
+    _patch_py313_metadata()
+    if _DIFFUSERS_READY:
+        import diffusers
+        return diffusers
+    print("Importing Diffusers...")
+    sys.stdout.flush()
+    import diffusers
+    _DIFFUSERS_READY = True
+    print("Diffusers imported")
+    sys.stdout.flush()
+    return diffusers
 
 
 def _default_output_dir() -> Path:
@@ -215,20 +247,26 @@ def validate_request(payload: dict[str, Any]) -> dict[str, Any]:
 def load_pipeline():
     global _pipe, _model_id, _device_note
     if _pipe is not None:
+        print("Model loaded")
         return _pipe
     with _load_lock:
         if _pipe is not None:
+            print("Model loaded")
             return _pipe
         import torch
-        from diffusers import DPMSolverMultistepScheduler, TextToVideoSDPipeline
         report = gpu_report()
-        print("GPU report:", report)
+        print("GPU detected:", report.get("gpu") or "none")
+        sys.stdout.flush()
         if not report["cuda_available"]:
             raise GenerationError("GPU unavailable. In Colab open Runtime -> Change runtime type -> GPU, then Run all.")
+        _import_diffusers()
+        from diffusers import DPMSolverMultistepScheduler, TextToVideoSDPipeline
         last_error: Optional[Exception] = None
         for model_id in MODEL_CANDIDATES:
             try:
+                print("Loading TextToVideoSDPipeline...")
                 print(f"Loading {model_id}")
+                sys.stdout.flush()
                 pipe = TextToVideoSDPipeline.from_pretrained(model_id, torch_dtype=torch.float16, variant="fp16")
                 pipe.scheduler = DPMSolverMultistepScheduler.from_config(pipe.scheduler.config)
                 if hasattr(pipe, "enable_vae_slicing"):
@@ -246,7 +284,9 @@ def load_pipeline():
                     _device_note = "fp16 on cuda"
                 _pipe = pipe
                 _model_id = model_id
+                print("Model loaded")
                 print(f"Loaded {model_id} ({_device_note})")
+                sys.stdout.flush()
                 return _pipe
             except GenerationError:
                 raise
